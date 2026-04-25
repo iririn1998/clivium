@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runCli } from "./cli.js";
 import { resetCliviumConfig } from "./config/load.js";
+import { SessionStore } from "./store/SessionStore.js";
 
 let cwdBefore: string;
 let tempDirs: string[] = [];
@@ -236,5 +237,67 @@ describe("clivium（振る舞い）", () => {
     await runCli(["node", "/fake", "--no-banner", "-c", path, "run", "--agent", "codex", "hello"]);
 
     expect(outChunks.join("")).toMatch(/reply:hello/);
+  });
+
+  it("sessions で保存済みセッションの一覧を表示できる", async () => {
+    const d = trackTemp(mkdtempSync(join(tmpdir(), "clivium-sessions-")));
+    process.env.CLIVIUM_DB_PATH = join(d, "sessions.sqlite");
+    const store = new SessionStore({ path: process.env.CLIVIUM_DB_PATH });
+    store.createSession({
+      id: "session-1",
+      mode: "run",
+      workspacePath: "/workspace",
+    });
+    store.close();
+    const outChunks: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((c) => {
+      outChunks.push(String(c));
+      return true;
+    });
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await runCli(["node", "/fake", "--no-banner", "sessions"]);
+
+    const text = outChunks.join("");
+    expect(text).toMatch(/session id/);
+    expect(text).toMatch(/session-1/);
+    expect(text).toMatch(/\/workspace/);
+  });
+
+  it("replay で保存済みセッションを再表示できる", async () => {
+    const d = trackTemp(mkdtempSync(join(tmpdir(), "clivium-replay-")));
+    process.env.CLIVIUM_DB_PATH = join(d, "sessions.sqlite");
+    const store = new SessionStore({ path: process.env.CLIVIUM_DB_PATH });
+    store.createSession({
+      id: "session-1",
+      mode: "run",
+      workspacePath: "/workspace",
+    });
+    store.addMessage({
+      sessionId: "session-1",
+      sender: "user",
+      recipient: "codex",
+      content: "hello",
+    });
+    store.addMessage({
+      sessionId: "session-1",
+      sender: "codex",
+      content: "answer",
+    });
+    store.close();
+    const outChunks: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((c) => {
+      outChunks.push(String(c));
+      return true;
+    });
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await runCli(["node", "/fake", "--no-banner", "replay", "session-1"]);
+
+    const text = outChunks.join("");
+    expect(text).toMatch(/session: session-1/);
+    expect(text).toMatch(/user -> codex/);
+    expect(text).toMatch(/hello/);
+    expect(text).toMatch(/answer/);
   });
 });

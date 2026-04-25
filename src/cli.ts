@@ -12,6 +12,7 @@ import { Command, CommanderError, type OptionValues } from "commander";
 import { printBanner } from "./banner.js";
 import { CliviumConfigError, loadCliviumConfig } from "./config/load.js";
 import { RunMode, RunModeError } from "./orchestrator/modes/RunMode.js";
+import { SessionsMode, SessionsModeError } from "./orchestrator/modes/SessionsMode.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -210,14 +211,22 @@ const buildProgram = (): Command => {
     .command("sessions")
     .description("保存したセッションの一覧")
     .action(() => {
-      notImplemented("sessions");
+      new SessionsMode().list();
     });
 
   program
     .command("replay <sessionId>")
     .description("保存したセッションの再表示")
-    .action(() => {
-      notImplemented("replay");
+    .action((sessionId: string) => {
+      try {
+        new SessionsMode().replay({ sessionId });
+      } catch (e) {
+        if (e instanceof SessionsModeError) {
+          console.error(`エラー: ${e.message}`);
+          process.exit(1);
+        }
+        throw e;
+      }
     });
 
   return program;
