@@ -20,6 +20,7 @@ beforeEach(() => {
   cwdBefore = process.cwd();
   tempDirs = [];
   resetCliviumConfig();
+  delete process.env.CLIVIUM_DB_PATH;
   vi.restoreAllMocks();
 });
 
@@ -35,6 +36,7 @@ afterEach(() => {
   }
   process.chdir(cwdBefore);
   delete process.env.CLIVIUM_CONFIG;
+  delete process.env.CLIVIUM_DB_PATH;
   delete process.env.CLIVIUM_VERBOSE;
   resetCliviumConfig();
 });
@@ -201,6 +203,7 @@ describe("clivium（振る舞い）", () => {
   it("run で指定した agent の応答をターミナルへ表示できる", async () => {
     const d = trackTemp(mkdtempSync(join(tmpdir(), "clivium-run-")));
     const path = join(d, "run.json");
+    process.env.CLIVIUM_DB_PATH = join(d, "sessions.sqlite");
     writeFileSync(
       path,
       JSON.stringify({

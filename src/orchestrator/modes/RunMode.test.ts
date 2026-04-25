@@ -9,7 +9,7 @@ import type {
 } from "../../agents/AgentAdapter.js";
 import type { AgentConfig, AgentName } from "../../config/agents.js";
 import { getDefaultCliviumConfig } from "../../config/defaults.js";
-import { RunMode, RunModeError } from "./RunMode.js";
+import { RunMode, RunModeError, type RunModeStore } from "./RunMode.js";
 
 class FakeAdapter implements AgentAdapter {
   readonly config: AgentConfig;
@@ -59,6 +59,32 @@ class FakeAdapter implements AgentAdapter {
   }
 }
 
+class FakeStore implements RunModeStore {
+  closed = false;
+  sessions: { id: string; mode: string; workspacePath: string }[] = [];
+  messages: { sessionId: string; sender: string; recipient?: string | null; content: string }[] =
+    [];
+
+  createSession(input: { mode: "run"; workspacePath: string }): { id: string } {
+    const session = { id: `session-${this.sessions.length + 1}`, ...input };
+    this.sessions.push(session);
+    return session;
+  }
+
+  addMessage(input: {
+    sessionId: string;
+    sender: string;
+    recipient?: string | null;
+    content: string;
+  }): void {
+    this.messages.push(input);
+  }
+
+  close(): void {
+    this.closed = true;
+  }
+}
+
 describe("RunMode（振る舞い）", () => {
   it("agent 未指定では、どの CLI も起動せずに説明付きで失敗する", async () => {
     const created: AgentName[] = [];
@@ -88,12 +114,14 @@ describe("RunMode（振る舞い）", () => {
 
   it("指定 agent に一回質問し、応答をターミナル出力として書き出す", async () => {
     const fake = new FakeAdapter("codex");
+    const store = new FakeStore();
     const out: string[] = [];
 
     const result = await new RunMode().execute({
       agent: "codex",
       prompt: " hello ",
       config: getDefaultCliviumConfig(),
+      store,
       stdout: {
         write: (chunk) => out.push(chunk),
       },
@@ -105,6 +133,20 @@ describe("RunMode（振る舞い）", () => {
     expect(out.join("")).toBe("answer\n");
     expect(result.message.content).toBe("answer");
     expect(fake.stopped).toBe(true);
+    expect(store.sessions).toHaveLength(1);
+    expect(store.messages).toEqual([
+      {
+        sessionId: "session-1",
+        sender: "user",
+        recipient: "codex",
+        content: "hello",
+      },
+      {
+        sessionId: "session-1",
+        sender: "codex",
+        content: "answer",
+      },
+    ]);
   });
 
   it("Gemini も同じ run 契約で起動できる", async () => {
@@ -114,6 +156,7 @@ describe("RunMode（振る舞い）", () => {
       agent: "gemini",
       prompt: "hello",
       config: getDefaultCliviumConfig(),
+      store: new FakeStore(),
       stdout: {
         write: () => {},
       },
@@ -129,6 +172,7 @@ describe("RunMode（振る舞い）", () => {
 
   it("読み取りが失敗しても、起動済み agent を止める", async () => {
     const fake = new FakeAdapter("codex");
+    const store = new FakeStore();
     fake.readError = new Error("read failed");
 
     await expect(
@@ -136,14 +180,24 @@ describe("RunMode（振る舞い）", () => {
         agent: "codex",
         prompt: "hello",
         config: getDefaultCliviumConfig(),
+        store,
         createAdapter: () => fake,
       }),
     ).rejects.toThrow(/read failed/);
     expect(fake.stopped).toBe(true);
+    expect(store.messages).toEqual([
+      {
+        sessionId: "session-1",
+        sender: "user",
+        recipient: "codex",
+        content: "hello",
+      },
+    ]);
   });
 
   it("timeout 扱いの応答は失敗にし、停止処理も行う", async () => {
     const fake = new FakeAdapter("codex");
+    const store = new FakeStore();
     fake.result = {
       output: "partial",
       events: [],
@@ -162,6 +216,7 @@ describe("RunMode（振る舞い）", () => {
         agent: "codex",
         prompt: "hello",
         config: getDefaultCliviumConfig(),
+        store,
         stdout: {
           write: (chunk) => out.push(chunk),
         },
@@ -170,5 +225,10 @@ describe("RunMode（振る舞い）", () => {
     ).rejects.toThrow(RunModeError);
     expect(out.join("")).toBe("partial\n");
     expect(fake.stopped).toBe(true);
+    expect(store.messages.at(-1)).toMatchObject({
+      sessionId: "session-1",
+      sender: "codex",
+      content: "partial",
+    });
   });
 });

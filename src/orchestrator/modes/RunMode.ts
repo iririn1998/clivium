@@ -10,6 +10,8 @@ import { getCliviumConfig } from "../../config/load.js";
 import type { AgentAdapter, AgentReadResult } from "../../agents/AgentAdapter.js";
 import { CodexAdapter } from "../../agents/CodexAdapter.js";
 import { GeminiAdapter } from "../../agents/GeminiAdapter.js";
+import { SessionStore } from "../../store/SessionStore.js";
+import type { AddStoredMessageInput, CreateStoredSessionInput } from "../../store/SessionStore.js";
 
 type OutputWriter = {
   write(chunk: string): unknown;
@@ -17,12 +19,19 @@ type OutputWriter = {
 
 export type RunModeAdapterFactory = (name: AgentName, config: AgentConfig) => AgentAdapter;
 
+export type RunModeStore = {
+  createSession(input: CreateStoredSessionInput): { id: string };
+  addMessage(input: AddStoredMessageInput): unknown;
+  close?(): void;
+};
+
 export type RunModeOptions = {
   agent?: string;
   prompt: string;
   config?: CliviumConfig;
   stdout?: OutputWriter;
   createAdapter?: RunModeAdapterFactory;
+  store?: RunModeStore;
 };
 
 export class RunModeError extends Error {
@@ -59,18 +68,39 @@ export class RunMode {
       agentName,
       config.agents[agentName],
     );
+    const store = options.store ?? new SessionStore();
+    const shouldCloseStore = options.store === undefined;
 
     try {
+      const session = store.createSession({
+        mode: "run",
+        workspacePath: process.cwd(),
+      });
+      store.addMessage({
+        sessionId: session.id,
+        sender: "user",
+        recipient: agentName,
+        content: prompt,
+      });
+
       await adapter.start();
       await adapter.send(prompt);
       const result = await adapter.read();
       writeRunOutput(options.stdout ?? process.stdout, result.output);
+      store.addMessage({
+        sessionId: session.id,
+        sender: agentName,
+        content: result.message.content,
+      });
       if (!result.completed) {
         throw new RunModeError(`agent "${agentName}" の応答がタイムアウトしました。`);
       }
       return result;
     } finally {
       await adapter.stop();
+      if (shouldCloseStore) {
+        store.close?.();
+      }
     }
   }
 }
