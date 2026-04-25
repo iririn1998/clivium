@@ -55,12 +55,13 @@ const defaultFactories: Record<AgentName, () => AgentConfig> = {
 };
 
 const createDefaultCliviumConfig = (): CliviumConfig => ({
-  agents: {
-    codex: codexDefault(),
-    gemini: geminiDefault(),
-    copilot: copilotDefault(),
-    cursor: cursorDefault(),
-  },
+  agents: BUILTIN_AGENT_NAMES.reduce(
+    (acc, name) => {
+      acc[name] = defaultFactories[name]();
+      return acc;
+    },
+    {} as CliviumConfig["agents"],
+  ),
 });
 
 /**
@@ -74,7 +75,7 @@ export const getDefaultCliviumConfig = (): CliviumConfig =>
  */
 export const mergeAgentsIntoConfig = (
   base: CliviumConfig,
-  userAgents: Partial<Record<AgentName, Partial<AgentConfig> | undefined>> | undefined
+  userAgents: Partial<Record<AgentName, Partial<AgentConfig> | undefined>> | undefined,
 ): CliviumConfig => {
   if (!userAgents) {
     return cloneConfig(base);

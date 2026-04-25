@@ -52,11 +52,7 @@ const notImplemented = (cmdName: string): never => {
  * @param c - 対象の `Command` インスタンス
  */
 const addCommonOptions = (c: Command): void => {
-  c
-    .option(
-      "-c, --config <path>",
-      "設定JSONのパス（以降の起動で参照する予定）"
-    )
+  c.option("-c, --config <path>", "設定JSONのパス（以降の起動で参照する予定）")
     .option("--cwd <path>", "作業ディレクトリ（このプロセスのカレントを切り替える）")
     .option("--no-banner", "起動バナーを表示しない", false)
     .option("-v, --verbose", "冗長なログ", false);
@@ -74,10 +70,7 @@ const addCommonOptions = (c: Command): void => {
  * @param dotted - `process.argv` から `node` とスクリプト名を除いた配列
  * @returns バナーを表示してよいとき `true`
  */
-const shouldPrintStartupBanner = (
-  program: Command,
-  dotted: string[]
-): boolean => {
+const shouldPrintStartupBanner = (program: Command, dotted: string[]): boolean => {
   if (dotted.includes("--no-banner")) return false;
   if (dotted.includes("-h") || dotted.includes("--help")) return false;
   if (dotted.includes("-V") || dotted.includes("--version")) {
@@ -88,9 +81,7 @@ const shouldPrintStartupBanner = (
   const head = dotted[0]!;
   if (head.startsWith("-")) return true;
 
-  const subNames = new Set(
-    program.commands.map((c) => c.name()).filter((n) => n !== "help")
-  );
+  const subNames = new Set(program.commands.map((c) => c.name()).filter((n) => n !== "help"));
   return subNames.has(head);
 };
 
@@ -133,16 +124,14 @@ const applyPreActionContext = (opts: GlobalOpts): void => {
     try {
       const st = statSync(path);
       if (!st.isDirectory()) {
-        console.error(
-          `エラー: --cwd のパスはディレクトリではありません: ${path}`
-        );
+        console.error(`エラー: --cwd のパスはディレクトリではありません: ${path}`);
         process.exit(1);
       }
     } catch (e) {
       console.error(
         `エラー: 作業ディレクトリを開けません: ${path} — ${
           e instanceof Error ? e.message : String(e)
-        }`
+        }`,
       );
       process.exit(1);
     }
@@ -152,7 +141,7 @@ const applyPreActionContext = (opts: GlobalOpts): void => {
       console.error(
         `エラー: 作業ディレクトリに移動できません: ${path} — ${
           e instanceof Error ? e.message : String(e)
-        }`
+        }`,
       );
       process.exit(1);
     }

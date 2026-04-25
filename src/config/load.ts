@@ -36,21 +36,15 @@ export class CliviumConfigError extends Error {
   }
 }
 
-const ctx = (path: string, detail: string): string =>
-  `設定ファイル: ${path}\n${detail}`;
+const ctx = (path: string, detail: string): string => `設定ファイル: ${path}\n${detail}`;
 
 const mustRecord = (filePath: string, v: unknown, label: string): Record<string, unknown> => {
   if (v === null) {
-    throw new CliviumConfigError(
-      ctx(filePath, `「${label}」は null にはできません。`)
-    );
+    throw new CliviumConfigError(ctx(filePath, `「${label}」は null にはできません。`));
   }
   if (typeof v !== "object" || Array.isArray(v)) {
     throw new CliviumConfigError(
-      ctx(
-        filePath,
-        `「${label}」はオブジェクトである必要があります。受け取った型: ${typeof v}。`
-      )
+      ctx(filePath, `「${label}」はオブジェクトである必要があります。受け取った型: ${typeof v}。`),
     );
   }
   return v as Record<string, unknown>;
@@ -63,8 +57,8 @@ const mustString = (filePath: string, propPath: string, v: unknown): string => {
         filePath,
         `「${propPath}」は空でない文字列である必要があります。受け取り: ${
           v === null ? "null" : typeof v
-        }。`
-      )
+        }。`,
+      ),
     );
   }
   return v;
@@ -73,10 +67,7 @@ const mustString = (filePath: string, propPath: string, v: unknown): string => {
 const mustStringList = (filePath: string, propPath: string, v: unknown): string[] => {
   if (!Array.isArray(v)) {
     throw new CliviumConfigError(
-      ctx(
-        filePath,
-        `「${propPath}」は文字列の配列である必要があります。受け取り: ${typeof v}。`
-      )
+      ctx(filePath, `「${propPath}」は文字列の配列である必要があります。受け取り: ${typeof v}。`),
     );
   }
   for (let i = 0; i < v.length; i++) {
@@ -84,8 +75,8 @@ const mustStringList = (filePath: string, propPath: string, v: unknown): string[
       throw new CliviumConfigError(
         ctx(
           filePath,
-          `「${propPath}[${i}]」は文字列である必要があります。受け取り: ${typeof v[i]}。`
-        )
+          `「${propPath}[${i}]」は文字列である必要があります。受け取り: ${typeof v[i]}。`,
+        ),
       );
     }
   }
@@ -98,8 +89,8 @@ const mustCwd = (filePath: string, propPath: string, v: unknown): string | null 
   throw new CliviumConfigError(
     ctx(
       filePath,
-      `「${propPath}」は null か文字列（ディレクトリパス）である必要があります。受け取り: ${typeof v}。`
-    )
+      `「${propPath}」は null か文字列（ディレクトリパス）である必要があります。受け取り: ${typeof v}。`,
+    ),
   );
 };
 
@@ -110,25 +101,19 @@ const mustTimeoutMs = (filePath: string, propPath: string, v: unknown): number =
         filePath,
         `「${propPath}」は正の整数（ミリ秒）である必要があります。受け取り: ${
           typeof v === "number" ? v : String(v)
-        }。`
-      )
+        }。`,
+      ),
     );
   }
   return v;
 };
 
-const AGENT_KNOWN_KEYS = new Set([
-  "command",
-  "args",
-  "cwd",
-  "color",
-  "timeoutMs",
-]);
+const AGENT_KNOWN_KEYS = new Set(["command", "args", "cwd", "color", "timeoutMs"]);
 
 const parsePartialAgent = (
   filePath: string,
   agentName: string,
-  raw: unknown
+  raw: unknown,
 ): Partial<AgentConfig> => {
   if (raw === null || raw === undefined) {
     return {};
@@ -139,10 +124,8 @@ const parsePartialAgent = (
       throw new CliviumConfigError(
         ctx(
           filePath,
-          `未知のキー: agents.${agentName}.${k}。許可: ${[...AGENT_KNOWN_KEYS].join(
-            ", "
-          )}。`
-        )
+          `未知のキー: agents.${agentName}.${k}。許可: ${[...AGENT_KNOWN_KEYS].join(", ")}。`,
+        ),
       );
     }
   }
@@ -160,18 +143,14 @@ const parsePartialAgent = (
     out.color = mustString(filePath, `agents.${agentName}.color`, o["color"]);
   }
   if (o["timeoutMs"] !== undefined) {
-    out.timeoutMs = mustTimeoutMs(
-      filePath,
-      `agents.${agentName}.timeoutMs`,
-      o["timeoutMs"]
-    );
+    out.timeoutMs = mustTimeoutMs(filePath, `agents.${agentName}.timeoutMs`, o["timeoutMs"]);
   }
   return out;
 };
 
 const parseAgentsBlock = (
   filePath: string,
-  data: unknown
+  data: unknown,
 ): Partial<Record<AgentName, Partial<AgentConfig> | undefined>> | undefined => {
   if (data === undefined) {
     return undefined;
@@ -181,10 +160,7 @@ const parseAgentsBlock = (
   for (const key of Object.keys(o)) {
     if (!isAgentName(key)) {
       throw new CliviumConfigError(
-        ctx(
-          filePath,
-          `agents の未知のキー: "${key}"。許可: ${BUILTIN_AGENT_NAMES.join(", ")}。`
-        )
+        ctx(filePath, `agents の未知のキー: "${key}"。許可: ${BUILTIN_AGENT_NAMES.join(", ")}。`),
       );
     }
     out[key] = parsePartialAgent(filePath, key, o[key]);
@@ -197,17 +173,14 @@ const parseAgentsBlock = (
  */
 export const parseCliviumConfigData = (
   filePath: string,
-  data: unknown
+  data: unknown,
 ): Partial<Record<AgentName, Partial<AgentConfig> | undefined>> | undefined => {
   if (data === null || data === undefined) {
     return undefined;
   }
   if (typeof data !== "object" || Array.isArray(data)) {
     throw new CliviumConfigError(
-      ctx(
-        filePath,
-        `JSONルートはオブジェクトである必要があります。受け取り: ${typeof data}。`
-      )
+      ctx(filePath, `JSONルートはオブジェクトである必要があります。受け取り: ${typeof data}。`),
     );
   }
   const root = data as Record<string, unknown>;
@@ -215,10 +188,7 @@ export const parseCliviumConfigData = (
   for (const k of Object.keys(root)) {
     if (!allowed.has(k)) {
       throw new CliviumConfigError(
-        ctx(
-          filePath,
-          `ルートの未知のキー: "${k}"。現時点で許可: ${[...allowed].join(", ")}。`
-        )
+        ctx(filePath, `ルートの未知のキー: "${k}"。現時点で許可: ${[...allowed].join(", ")}。`),
       );
     }
   }
@@ -238,10 +208,7 @@ export const readCliviumConfigFile = (configPath: string): CliviumConfig => {
     text = readFileSync(pathAbs, "utf-8");
   } catch (e) {
     throw new CliviumConfigError(
-      ctx(
-        pathAbs,
-        `ファイルを開けません: ${e instanceof Error ? e.message : String(e)}`
-      )
+      ctx(pathAbs, `ファイルを開けません: ${e instanceof Error ? e.message : String(e)}`),
     );
   }
   let data: unknown;
@@ -249,12 +216,7 @@ export const readCliviumConfigFile = (configPath: string): CliviumConfig => {
     data = JSON.parse(text) as unknown;
   } catch (e) {
     throw new CliviumConfigError(
-      ctx(
-        pathAbs,
-        `JSONとして解釈できません: ${
-          e instanceof Error ? e.message : String(e)
-        }`
-      )
+      ctx(pathAbs, `JSONとして解釈できません: ${e instanceof Error ? e.message : String(e)}`),
     );
   }
   const partial = parseCliviumConfigData(pathAbs, data);
