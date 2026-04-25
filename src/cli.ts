@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { Command, CommanderError, type OptionValues } from "commander";
 import { printBanner } from "./banner.js";
 import { CliviumConfigError, loadCliviumConfig } from "./config/load.js";
+import { RunMode, RunModeError } from "./orchestrator/modes/RunMode.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -33,6 +34,10 @@ type GlobalOpts = OptionValues & {
   cwd?: string;
   noBanner?: boolean;
   verbose?: boolean;
+};
+
+type RunCommandOpts = GlobalOpts & {
+  agent?: string;
 };
 
 /**
@@ -171,8 +176,20 @@ const buildProgram = (): Command => {
   program
     .command("run [prompt...]")
     .description("単体エージェントへ一回質問する")
-    .action(() => {
-      notImplemented("run");
+    .option("-a, --agent <name>", "起動するagent名（codex / gemini）")
+    .action(async (prompt: string[], opts: RunCommandOpts) => {
+      try {
+        await new RunMode().execute({
+          agent: opts.agent,
+          prompt: prompt.join(" "),
+        });
+      } catch (e) {
+        if (e instanceof RunModeError) {
+          console.error(`エラー: ${e.message}`);
+          process.exit(1);
+        }
+        throw e;
+      }
     });
 
   program
@@ -217,7 +234,7 @@ const buildProgram = (): Command => {
  *
  * @param argv - 少なくとも `[node, scriptPath, ...userArgs]` 形式。`{ from: 'node' }` で parse する。
  */
-export const runCli = (argv: string[]): void => {
+export const runCli = async (argv: string[]): Promise<void> => {
   const program = buildProgram();
   program.version(getVersion());
   const dotted = argv.slice(2);
@@ -237,7 +254,7 @@ export const runCli = (argv: string[]): void => {
   });
 
   try {
-    program.parse(argv, { from: "node" });
+    await program.parseAsync(argv, { from: "node" });
   } catch (e) {
     if (e instanceof CommanderError) {
       if (e.exitCode === 0) {
