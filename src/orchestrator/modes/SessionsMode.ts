@@ -98,7 +98,12 @@ export const formatSessions = (sessions: StoredSession[]): string => {
   const widths = rows[0]!.map((_cell, i) => Math.max(...rows.map((row) => row[i]!.length)));
 
   return `${rows
-    .map((row) => row.map((cell, i) => cell.padEnd(widths[i]!)).join("  ").trimEnd())
+    .map((row) =>
+      row
+        .map((cell, i) => cell.padEnd(widths[i]!))
+        .join("  ")
+        .trimEnd(),
+    )
     .join("\n")}\n`;
 };
 

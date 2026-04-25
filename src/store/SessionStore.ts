@@ -87,7 +87,10 @@ export const generateSessionId = (
   now = new Date(),
   randomId: () => string = randomUUID,
 ): string => {
-  const stamp = now.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  const stamp = now
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}Z$/, "Z");
   return `${stamp}-${randomId().replace(/-/g, "").slice(0, 8)}`;
 };
 
@@ -127,13 +130,7 @@ export class SessionStore {
         VALUES (?, ?, ?, ?, ?)
         `,
       )
-      .run(
-        session.id,
-        session.mode,
-        session.createdAt,
-        session.updatedAt,
-        session.workspacePath,
-      );
+      .run(session.id, session.mode, session.createdAt, session.updatedAt, session.workspacePath);
 
     return session;
   }

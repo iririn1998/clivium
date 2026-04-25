@@ -45,9 +45,7 @@ export const applyMigrations = (db: DatabaseSync): void => {
 
   const currentVersion = readSchemaVersion(db);
   if (currentVersion > CURRENT_SCHEMA_VERSION) {
-    throw new StoreMigrationError(
-      `DBスキーマのバージョンが新しすぎます: ${currentVersion}`,
-    );
+    throw new StoreMigrationError(`DBスキーマのバージョンが新しすぎます: ${currentVersion}`);
   }
 
   if (currentVersion < 1) {

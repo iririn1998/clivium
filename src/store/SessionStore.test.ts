@@ -5,11 +5,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  generateSessionId,
-  resolveSessionDbPath,
-  SessionStore,
-} from "./SessionStore.js";
+import { generateSessionId, resolveSessionDbPath, SessionStore } from "./SessionStore.js";
 
 let tempDirs: string[] = [];
 
