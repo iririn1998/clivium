@@ -16,7 +16,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "commander": "^14.0.3"
+    "commander": "^14.0.3",
+    "node-pty": "^1.1.0"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
