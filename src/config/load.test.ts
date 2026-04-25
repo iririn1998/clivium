@@ -68,11 +68,7 @@ describe("Clivium 設定（load の振る舞い）", () => {
   it("JSONの形が合わなければ、人がファイルを辿れるようにパス付きの説明付きのエラーに落ちる", () => {
     const d = track(mkdtempSync(join(tmpdir(), "clivium-bad-")));
     const p = join(d, "bad.json");
-    writeFileSync(
-      p,
-      JSON.stringify({ agents: { not_an_agent: { command: "a" } } }),
-      "utf-8",
-    );
+    writeFileSync(p, JSON.stringify({ agents: { not_an_agent: { command: "a" } } }), "utf-8");
     expect(() => readCliviumConfigFile(p)).toThrow(/未知のキー/);
   });
 });

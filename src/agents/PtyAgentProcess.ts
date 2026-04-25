@@ -52,7 +52,12 @@ type ExitInfo = {
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_IDLE_MS = 250;
 
-const ANSI_SEQUENCE = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))/g;
+const ESC = "\\x1B";
+const BEL = "\\x07";
+const ANSI_SEQUENCE = new RegExp(
+  `${ESC}(?:[@-Z\\\\-_]|\\[[0-?]*[ -/]*[@-~]|\\][^${BEL}]*(?:${BEL}|${ESC}\\\\))`,
+  "g",
+);
 const require = createRequire(import.meta.url);
 
 export const stripAnsiSequences = (s: string): string => s.replace(ANSI_SEQUENCE, "");
@@ -65,7 +70,12 @@ const ensureSpawnHelperExecutable = (): void => {
   try {
     const nodePtyMain = require.resolve("node-pty");
     const packageRoot = resolve(dirname(nodePtyMain), "..");
-    const helper = resolve(packageRoot, "prebuilds", `${process.platform}-${process.arch}`, "spawn-helper");
+    const helper = resolve(
+      packageRoot,
+      "prebuilds",
+      `${process.platform}-${process.arch}`,
+      "spawn-helper",
+    );
     const st = statSync(helper);
     if ((st.mode & 0o111) === 0) {
       chmodSync(helper, st.mode | 0o755);
