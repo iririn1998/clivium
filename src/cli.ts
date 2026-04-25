@@ -10,6 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command, CommanderError, type OptionValues } from "commander";
 import { printBanner } from "./banner.js";
+import { CliviumConfigError, loadCliviumConfig } from "./config/load.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -96,9 +97,9 @@ const shouldPrintStartupBanner = (
 /**
  * 各サブコマンドの action 直前（`preAction`）に、環境とカレントディレクトリを揃える。
  *
- * - `config` → `process.env.CLIVIUM_CONFIG`（T2 以降の `--config` 解決で利用予定）
+ * - `config` → `process.env.CLIVIUM_CONFIG` を更新し、{@link loadCliviumConfig} で反映
  * - `verbose` → `CLIVIUM_VERBOSE=1` が付く
- * - `cwd` → 解決・存在・ディレクトリ検証のうえ `process.chdir`
+ * - `cwd` → 解決・存在・ディレクトリ検証のうえ `process.chdir`（設定のファイルパス解決のあと）
  *
  * いずれかの検証失敗時はメッセージを出して `process.exit(1)` する。
  *
@@ -115,6 +116,16 @@ const applyPreActionContext = (opts: GlobalOpts): void => {
     process.env.CLIVIUM_VERBOSE = "1";
   } else {
     delete process.env.CLIVIUM_VERBOSE;
+  }
+
+  try {
+    loadCliviumConfig({ path: opts.config });
+  } catch (e) {
+    if (e instanceof CliviumConfigError) {
+      console.error(`エラー: 設定の読み込みに失敗しました。\n${e.message}`);
+      process.exit(1);
+    }
+    throw e;
   }
 
   if (opts.cwd) {
