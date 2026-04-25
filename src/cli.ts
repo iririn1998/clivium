@@ -54,6 +54,15 @@ type DebateCommandOpts = GlobalOpts & {
   timeoutMs?: string;
 };
 
+const startTui = async (): Promise<void> => {
+  const [{ render }, { createElement }, { App }] = await Promise.all([
+    import("ink"),
+    import("react"),
+    import("./tui/App.js"),
+  ]);
+  render(createElement(App));
+};
+
 /**
  * ルートおよび（必要なら将来）サブコマンドに同一のグローバル風オプションを付与する。
  *
@@ -244,6 +253,13 @@ const buildProgram = (): Command => {
     .description("保存したセッションの一覧")
     .action(() => {
       new SessionsMode().list();
+    });
+
+  program
+    .command("tui")
+    .description("ログ、入力欄、agent状態を同時に確認できる最小TUIを起動する")
+    .action(async () => {
+      await startTui();
     });
 
   program
