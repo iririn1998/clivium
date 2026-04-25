@@ -28,6 +28,15 @@ export type StoredMessage = {
   createdAt: string;
 };
 
+export type StoredAgentEvent = {
+  id: string;
+  sessionId: string;
+  agent: AgentName;
+  eventType: string;
+  payload: string | null;
+  createdAt: string;
+};
+
 export type StoredSessionWithMessages = StoredSession & {
   messages: StoredMessage[];
 };
@@ -44,6 +53,15 @@ export type AddStoredMessageInput = {
   sender: "user" | "system" | AgentName;
   recipient?: AgentName | null;
   content: string;
+  createdAt?: string;
+};
+
+export type AddStoredAgentEventInput = {
+  id?: string;
+  sessionId: string;
+  agent: AgentName;
+  eventType: string;
+  payload?: string | null;
   createdAt?: string;
 };
 
@@ -67,6 +85,15 @@ type MessageRow = {
   sender: string;
   recipient: string | null;
   content: string;
+  created_at: string;
+};
+
+type AgentEventRow = {
+  id: string;
+  session_id: string;
+  agent: AgentName;
+  event_type: string;
+  payload: string | null;
   created_at: string;
 };
 
@@ -174,6 +201,45 @@ export class SessionStore {
     return message;
   }
 
+  addAgentEvent(input: AddStoredAgentEventInput): StoredAgentEvent {
+    const event: StoredAgentEvent = {
+      id: input.id ?? `evt_${this.randomId()}`,
+      sessionId: input.sessionId,
+      agent: input.agent,
+      eventType: input.eventType,
+      payload: input.payload ?? null,
+      createdAt: input.createdAt ?? this.now().toISOString(),
+    };
+
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db
+        .prepare(
+          `
+          INSERT INTO agent_events (id, session_id, agent, event_type, payload, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+          `,
+        )
+        .run(
+          event.id,
+          event.sessionId,
+          event.agent,
+          event.eventType,
+          event.payload,
+          event.createdAt,
+        );
+      this.db
+        .prepare("UPDATE sessions SET updated_at = ? WHERE id = ?")
+        .run(event.createdAt, event.sessionId);
+      this.db.exec("COMMIT");
+    } catch (e) {
+      this.db.exec("ROLLBACK");
+      throw e;
+    }
+
+    return event;
+  }
+
   listSessions(limit = 50): StoredSession[] {
     const rows = this.db
       .prepare(
@@ -221,6 +287,21 @@ export class SessionStore {
     };
   }
 
+  listAgentEvents(sessionId: string): StoredAgentEvent[] {
+    const rows = this.db
+      .prepare(
+        `
+        SELECT id, session_id, agent, event_type, payload, created_at
+        FROM agent_events
+        WHERE session_id = ?
+        ORDER BY created_at ASC, rowid ASC
+        `,
+      )
+      .all(sessionId) as AgentEventRow[];
+
+    return rows.map(mapAgentEventRow);
+  }
+
   close(): void {
     this.db.close();
   }
@@ -240,5 +321,14 @@ const mapMessageRow = (row: MessageRow): StoredMessage => ({
   sender: row.sender,
   recipient: row.recipient,
   content: row.content,
+  createdAt: row.created_at,
+});
+
+const mapAgentEventRow = (row: AgentEventRow): StoredAgentEvent => ({
+  id: row.id,
+  sessionId: row.session_id,
+  agent: row.agent,
+  eventType: row.event_type,
+  payload: row.payload,
   createdAt: row.created_at,
 });

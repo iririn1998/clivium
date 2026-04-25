@@ -5,7 +5,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 const migrationV1 = `
 CREATE TABLE IF NOT EXISTS sessions (
@@ -33,6 +33,21 @@ CREATE INDEX IF NOT EXISTS idx_messages_session_created_at
   ON messages(session_id, created_at);
 `;
 
+const migrationV2 = `
+CREATE TABLE IF NOT EXISTS agent_events (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  agent TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  payload TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_events_session_created_at
+  ON agent_events(session_id, created_at);
+`;
+
 export class StoreMigrationError extends Error {
   constructor(message: string) {
     super(message);
@@ -51,6 +66,11 @@ export const applyMigrations = (db: DatabaseSync): void => {
   if (currentVersion < 1) {
     db.exec(migrationV1);
     db.exec("PRAGMA user_version = 1");
+  }
+
+  if (currentVersion < 2) {
+    db.exec(migrationV2);
+    db.exec("PRAGMA user_version = 2");
   }
 };
 

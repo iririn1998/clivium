@@ -67,16 +67,23 @@ describe("SessionStore", () => {
       sender: "codex",
       content: "answer",
     });
+    const event = store.addAgentEvent({
+      sessionId: session.id,
+      agent: "codex",
+      eventType: "safety.detected",
+      payload: JSON.stringify({ kind: "dangerous-command" }),
+    });
 
     expect(session.id).toBe("20260425T000000Z-id1");
     expect(userMessage.recipient).toBe("codex");
     expect(agentMessage.sender).toBe("codex");
+    expect(event.eventType).toBe("safety.detected");
     expect(store.listSessions()).toMatchObject([
       {
         id: session.id,
         mode: "run",
         workspacePath: "/workspace",
-        updatedAt: "2026-04-25T00:00:03.000Z",
+        updatedAt: "2026-04-25T00:00:04.000Z",
       },
     ]);
     expect(store.getSession(session.id)).toMatchObject({
@@ -86,6 +93,14 @@ describe("SessionStore", () => {
         { sender: "codex", recipient: null, content: "answer" },
       ],
     });
+    expect(store.listAgentEvents(session.id)).toMatchObject([
+      {
+        sessionId: session.id,
+        agent: "codex",
+        eventType: "safety.detected",
+        payload: JSON.stringify({ kind: "dangerous-command" }),
+      },
+    ]);
 
     store.close();
   });
