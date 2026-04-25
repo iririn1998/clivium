@@ -13,7 +13,7 @@
     "lint": "oxlint .",
     "format": "oxfmt --write src",
     "format:check": "oxfmt --check src",
-    "test": "vitest"
+    "test": "vitest run"
   },
   "dependencies": {
     "commander": "^14.0.3"
