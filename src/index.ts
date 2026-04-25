@@ -1,4 +1,8 @@
 #!/usr/bin/env node
-import { printBanner } from "./banner.js";
+/**
+ * @file プロセス入口。`package.json` の `bin` が指す 1 ファイル。
+ */
 
-printBanner();
+import { runCli } from "./cli.js";
+
+runCli(process.argv);

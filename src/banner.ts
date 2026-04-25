@@ -1,6 +1,7 @@
 /**
- * 起動バナー（@see Plan.md 起動バナー案）
- * BANNER_LINES の先頭・末尾の空行を含めてそのまま表示する
+ * 起動時に `stdout` へ出す ASCII ロゴ＋タグライン。
+ *
+ * @see {@link printBanner}
  */
 export const BANNER_LINES = [
   "",
@@ -14,6 +15,9 @@ export const BANNER_LINES = [
   "",
 ] as const;
 
+/**
+ * {@link BANNER_LINES} を改行で連結して 1 回だけ `console.log` する。先頭・末尾の空行を保持する。
+ */
 export function printBanner(): void {
   console.log(BANNER_LINES.join("\n"));
 }
