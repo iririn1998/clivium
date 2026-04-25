@@ -92,17 +92,18 @@ describe("clivium（振る舞い）", () => {
     expect(log).not.toHaveBeenCalled();
   });
 
-  it("未実装のサブコマンドを使うと、未対応であることが伝えられ、失敗扱いで止まる", async () => {
-    const errLines: string[] = [];
-    vi.spyOn(console, "error").mockImplementation((m?: unknown) => {
-      errLines.push(m === undefined || m === null ? "" : String(m));
+  it("存在しないサブコマンドを使うと、失敗扱いで止まる", async () => {
+    const errChunks: string[] = [];
+    vi.spyOn(process.stderr, "write").mockImplementation((m) => {
+      errChunks.push(String(m));
+      return true;
     });
     vi.spyOn(process, "exit").mockImplementation((code?: string | number | null) => {
       throw new Error(`exit:${String(code)}`);
     });
 
-    await expect(runCli(["node", "/fake", "debate"])).rejects.toThrow("exit:1");
-    expect(errLines.join("\n")).toMatch(/未実装/);
+    await expect(runCli(["node", "/fake", "unknown"])).rejects.toThrow("exit:1");
+    expect(errChunks.join("")).toMatch(/unknown command/);
   });
 
   it("壊れた設定ファイルのパスを付けたとき、読み取り失敗の旨が出て、失敗扱いで止まる", async () => {
@@ -154,7 +155,7 @@ describe("clivium（振る舞い）", () => {
     expect(errLines.join("\n")).toMatch(/ディレクトリ/);
   });
 
-  it("存在する作業ディレクトリに移れたあと、未実装サブコマンドは従来どおり失敗する", async () => {
+  it("存在する作業ディレクトリに移れたあと、サブコマンドの検証へ進む", async () => {
     const d = trackTemp(mkdtempSync(join(tmpdir(), "clivium-ok-")));
     mkdirSync(join(d, "sub"), { recursive: true });
     const errLines: string[] = [];
@@ -165,10 +166,10 @@ describe("clivium（振る舞い）", () => {
       throw new Error(`exit:${String(code)}`);
     });
 
-    await expect(runCli(["node", "/fake", "--cwd", join(d, "sub"), "debate"])).rejects.toThrow(
+    await expect(runCli(["node", "/fake", "--cwd", join(d, "sub"), "run"])).rejects.toThrow(
       "exit:1",
     );
-    expect(errLines.join("\n")).toMatch(/未実装/);
+    expect(errLines.join("\n")).toMatch(/--agent/);
   });
 
   it("run で agent 未指定なら、agent 指定が必要なことを伝えて失敗扱いで止まる", async () => {
@@ -302,6 +303,74 @@ describe("clivium（振る舞い）", () => {
         { sender: "codex", content: "hello\ncodex:hello" },
         { sender: "user", recipient: "gemini", content: "hello" },
         { sender: "gemini", content: "hello\ngemini:hello" },
+      ],
+    });
+  });
+
+  it("debate で2 agentを交互に応答させ、保存できる", async () => {
+    const d = trackTemp(mkdtempSync(join(tmpdir(), "clivium-debate-")));
+    const path = join(d, "debate.json");
+    const dbPath = join(d, "sessions.sqlite");
+    process.env.CLIVIUM_DB_PATH = dbPath;
+    const agentScript = (prefix: string) => `
+      process.stdin.setEncoding("utf8");
+      process.stdin.on("data", (chunk) => {
+        process.stdout.write("${prefix}:" + chunk.trim());
+        process.exit(0);
+      });
+    `;
+    writeFileSync(
+      path,
+      JSON.stringify({
+        agents: {
+          codex: {
+            command: process.execPath,
+            args: ["-e", agentScript("codex")],
+            timeoutMs: 2000,
+          },
+          gemini: {
+            command: process.execPath,
+            args: ["-e", agentScript("gemini")],
+            timeoutMs: 2000,
+          },
+        },
+      }),
+      "utf-8",
+    );
+    const outChunks: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((c) => {
+      outChunks.push(String(c));
+      return true;
+    });
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await runCli([
+      "node",
+      "/fake",
+      "--no-banner",
+      "-c",
+      path,
+      "debate",
+      "--agents",
+      "codex,gemini",
+      "--rounds",
+      "1",
+      "theme",
+    ]);
+
+    const text = outChunks.join("");
+    expect(text).toMatch(/\[round 1 codex\]/);
+    expect(text).toMatch(/\[round 1 gemini\]/);
+
+    const store = new SessionStore({ path: dbPath });
+    const session = store.getSession(store.listSessions()[0]!.id);
+    store.close();
+    expect(session).toMatchObject({
+      mode: "debate",
+      messages: [
+        { sender: "user", recipient: "codex", content: "theme" },
+        { sender: "codex", recipient: "gemini" },
+        { sender: "gemini", recipient: null },
       ],
     });
   });

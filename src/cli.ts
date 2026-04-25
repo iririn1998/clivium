@@ -12,6 +12,7 @@ import { Command, CommanderError, type OptionValues } from "commander";
 import { printBanner } from "./banner.js";
 import { CliviumConfigError, loadCliviumConfig } from "./config/load.js";
 import { ChatMode, ChatModeError } from "./orchestrator/modes/ChatMode.js";
+import { DebateMode, DebateModeError } from "./orchestrator/modes/DebateMode.js";
 import { RunMode, RunModeError } from "./orchestrator/modes/RunMode.js";
 import { SessionsMode, SessionsModeError } from "./orchestrator/modes/SessionsMode.js";
 
@@ -46,15 +47,11 @@ type ChatCommandOpts = GlobalOpts & {
   agents?: string;
 };
 
-/**
- * T1 時点のプレースホルダ。未実装サブコマンドの action から呼ぶ。
- *
- * @param cmdName - 表示用のサブコマンド名
- * @returns 常に呼び出し側へは戻らない（`process.exit(1)`）
- */
-const notImplemented = (cmdName: string): never => {
-  console.error(`「${cmdName}」は未実装です。`);
-  process.exit(1);
+type DebateCommandOpts = GlobalOpts & {
+  agents?: string;
+  rounds?: string;
+  maxChars?: string;
+  timeoutMs?: string;
 };
 
 /**
@@ -220,8 +217,26 @@ const buildProgram = (): Command => {
   program
     .command("debate [theme...]")
     .description("2エージェントを指定ラウンドで交互に応答させる")
-    .action(() => {
-      notImplemented("debate");
+    .option("--agents <names>", "起動するagent名のカンマ区切り（例: codex,gemini）")
+    .option("--rounds <count>", "各agentの応答ラウンド数", "3")
+    .option("--max-chars <count>", "次agentへ渡す発言の最大文字数", "12000")
+    .option("--timeout-ms <ms>", "各応答のタイムアウト（ミリ秒）")
+    .action(async (theme: string[], opts: DebateCommandOpts) => {
+      try {
+        await new DebateMode().execute({
+          agents: opts.agents,
+          rounds: opts.rounds,
+          maxChars: opts.maxChars,
+          timeoutMs: opts.timeoutMs,
+          theme: theme.join(" "),
+        });
+      } catch (e) {
+        if (e instanceof DebateModeError) {
+          console.error(`エラー: ${e.message}`);
+          process.exit(1);
+        }
+        throw e;
+      }
     });
 
   program
