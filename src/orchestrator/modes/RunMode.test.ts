@@ -9,6 +9,7 @@ import type {
 } from "../../agents/AgentAdapter.js";
 import type { AgentConfig, AgentName } from "../../config/agents.js";
 import { getDefaultCliviumConfig } from "../../config/defaults.js";
+import type { ApprovalGate } from "../../safety/ApprovalGate.js";
 import { RunMode, RunModeError, type RunModeStore } from "./RunMode.js";
 
 class FakeAdapter implements AgentAdapter {
@@ -64,6 +65,7 @@ class FakeStore implements RunModeStore {
   sessions: { id: string; mode: string; workspacePath: string }[] = [];
   messages: { sessionId: string; sender: string; recipient?: string | null; content: string }[] =
     [];
+  events: { sessionId: string; agent: string; eventType: string; payload?: string | null }[] = [];
 
   createSession(input: { mode: "run"; workspacePath: string }): { id: string } {
     const session = { id: `session-${this.sessions.length + 1}`, ...input };
@@ -80,10 +82,24 @@ class FakeStore implements RunModeStore {
     this.messages.push(input);
   }
 
+  addAgentEvent(input: Parameters<NonNullable<RunModeStore["addAgentEvent"]>>[0]): void {
+    this.events.push(input);
+  }
+
   close(): void {
     this.closed = true;
   }
 }
+
+const approvingGate: ApprovalGate = {
+  async requestApproval() {
+    return {
+      approved: true,
+      response: "yes",
+      decidedAt: "2026-04-25T00:00:00.000Z",
+    };
+  },
+};
 
 describe("RunMode（振る舞い）", () => {
   it("agent 未指定では、どの CLI も起動せずに説明付きで失敗する", async () => {
@@ -230,5 +246,38 @@ describe("RunMode（振る舞い）", () => {
       sender: "codex",
       content: "partial",
     });
+  });
+
+  it("危険操作らしき出力は承認を挟み、検出と結果を保存する", async () => {
+    const fake = new FakeAdapter("codex");
+    fake.result = {
+      output: "git reset --hard",
+      events: [],
+      completed: true,
+      message: {
+        role: "agent",
+        agent: "codex",
+        content: "git reset --hard",
+        createdAt: "2026-04-25T00:00:00.000Z",
+      },
+    };
+    const store = new FakeStore();
+
+    await new RunMode().execute({
+      agent: "codex",
+      prompt: "hello",
+      config: getDefaultCliviumConfig(),
+      store,
+      approvalGate: approvingGate,
+      stdout: {
+        write: () => {},
+      },
+      createAdapter: () => fake,
+    });
+
+    expect(store.events.map((event) => event.eventType)).toEqual([
+      "safety.detected",
+      "safety.approved",
+    ]);
   });
 });

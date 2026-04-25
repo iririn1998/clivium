@@ -11,7 +11,14 @@ import type { AgentAdapter, AgentReadResult } from "../../agents/AgentAdapter.js
 import { CodexAdapter } from "../../agents/CodexAdapter.js";
 import { GeminiAdapter } from "../../agents/GeminiAdapter.js";
 import { SessionStore } from "../../store/SessionStore.js";
-import type { AddStoredMessageInput, CreateStoredSessionInput } from "../../store/SessionStore.js";
+import type {
+  AddStoredAgentEventInput,
+  AddStoredMessageInput,
+  CreateStoredSessionInput,
+} from "../../store/SessionStore.js";
+import type { ApprovalGate } from "../../safety/ApprovalGate.js";
+import { reviewSafety } from "../../safety/SafetyHooks.js";
+import type { SafetyPolicy } from "../../safety/SafetyPolicy.js";
 
 type OutputWriter = {
   write(chunk: string): unknown;
@@ -22,6 +29,7 @@ export type RunModeAdapterFactory = (name: AgentName, config: AgentConfig) => Ag
 export type RunModeStore = {
   createSession(input: CreateStoredSessionInput): { id: string };
   addMessage(input: AddStoredMessageInput): unknown;
+  addAgentEvent?(input: AddStoredAgentEventInput): unknown;
   close?(): void;
 };
 
@@ -32,6 +40,8 @@ export type RunModeOptions = {
   stdout?: OutputWriter;
   createAdapter?: RunModeAdapterFactory;
   store?: RunModeStore;
+  safetyPolicy?: SafetyPolicy;
+  approvalGate?: ApprovalGate;
 };
 
 export class RunModeError extends Error {
@@ -92,6 +102,14 @@ export class RunMode {
         sender: agentName,
         content: result.message.content,
       });
+      await enforceSafetyApproval({
+        sessionId: session.id,
+        agentName,
+        content: result.message.content,
+        store,
+        safetyPolicy: options.safetyPolicy,
+        approvalGate: options.approvalGate,
+      });
       if (!result.completed) {
         throw new RunModeError(`agent "${agentName}" の応答がタイムアウトしました。`);
       }
@@ -124,4 +142,28 @@ const writeRunOutput = (stdout: OutputWriter, output: string): void => {
     return;
   }
   stdout.write(output.endsWith("\n") ? output : `${output}\n`);
+};
+
+type EnforceSafetyApprovalInput = {
+  sessionId: string;
+  agentName: AgentName;
+  content: string;
+  store: RunModeStore;
+  safetyPolicy: SafetyPolicy | undefined;
+  approvalGate: ApprovalGate | undefined;
+};
+
+const enforceSafetyApproval = async (input: EnforceSafetyApprovalInput): Promise<void> => {
+  const review = await reviewSafety({
+    sessionId: input.sessionId,
+    agent: input.agentName,
+    content: input.content,
+    store: input.store,
+    policy: input.safetyPolicy,
+    approvalGate: input.approvalGate,
+  });
+
+  if (review.approval !== null && !review.approval.approved) {
+    throw new RunModeError(`agent "${input.agentName}" の出力は承認されませんでした。`);
+  }
 };

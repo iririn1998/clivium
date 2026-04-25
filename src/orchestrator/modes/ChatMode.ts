@@ -11,7 +11,14 @@ import type { AgentAdapter, AgentReadResult } from "../../agents/AgentAdapter.js
 import { CodexAdapter } from "../../agents/CodexAdapter.js";
 import { GeminiAdapter } from "../../agents/GeminiAdapter.js";
 import { SessionStore } from "../../store/SessionStore.js";
-import type { AddStoredMessageInput, CreateStoredSessionInput } from "../../store/SessionStore.js";
+import type {
+  AddStoredAgentEventInput,
+  AddStoredMessageInput,
+  CreateStoredSessionInput,
+} from "../../store/SessionStore.js";
+import type { ApprovalGate } from "../../safety/ApprovalGate.js";
+import { reviewSafety } from "../../safety/SafetyHooks.js";
+import type { SafetyPolicy } from "../../safety/SafetyPolicy.js";
 
 type OutputWriter = {
   write(chunk: string): unknown;
@@ -22,6 +29,7 @@ export type ChatModeAdapterFactory = (name: AgentName, config: AgentConfig) => A
 export type ChatModeStore = {
   createSession(input: CreateStoredSessionInput): { id: string };
   addMessage(input: AddStoredMessageInput): unknown;
+  addAgentEvent?(input: AddStoredAgentEventInput): unknown;
   close?(): void;
 };
 
@@ -32,6 +40,8 @@ export type ChatModeOptions = {
   stdout?: OutputWriter;
   createAdapter?: ChatModeAdapterFactory;
   store?: ChatModeStore;
+  safetyPolicy?: SafetyPolicy;
+  approvalGate?: ApprovalGate;
 };
 
 export type ChatAgentResponse = {
@@ -111,6 +121,8 @@ export class ChatMode {
           createAdapter,
           store,
           sessionId: session.id,
+          safetyPolicy: options.safetyPolicy,
+          approvalGate: options.approvalGate,
         });
         if ("response" in outcome) {
           responses.push(outcome.response);
@@ -144,6 +156,8 @@ type RunOneAgentInput = {
   createAdapter: ChatModeAdapterFactory;
   store: ChatModeStore;
   sessionId: string;
+  safetyPolicy: SafetyPolicy | undefined;
+  approvalGate: ApprovalGate | undefined;
 };
 
 type RunOneAgentOutcome = { response: ChatAgentResponse } | { failure: ChatAgentFailure };
@@ -161,6 +175,14 @@ const runOneAgent = async (input: RunOneAgentInput): Promise<RunOneAgentOutcome>
       sessionId: input.sessionId,
       sender: input.agentName,
       content: result.message.content,
+    });
+    await enforceSafetyApproval({
+      sessionId: input.sessionId,
+      agentName: input.agentName,
+      content: result.message.content,
+      store: input.store,
+      safetyPolicy: input.safetyPolicy,
+      approvalGate: input.approvalGate,
     });
 
     if (!result.completed) {
@@ -236,4 +258,28 @@ const writeAgentOutput = (stdout: OutputWriter, agentName: AgentName, output: st
 
 const writeAgentError = (stdout: OutputWriter, agentName: AgentName, error: Error): void => {
   stdout.write(`[${agentName}] ERROR: ${error.message}\n\n`);
+};
+
+type EnforceSafetyApprovalInput = {
+  sessionId: string;
+  agentName: AgentName;
+  content: string;
+  store: ChatModeStore;
+  safetyPolicy: SafetyPolicy | undefined;
+  approvalGate: ApprovalGate | undefined;
+};
+
+const enforceSafetyApproval = async (input: EnforceSafetyApprovalInput): Promise<void> => {
+  const review = await reviewSafety({
+    sessionId: input.sessionId,
+    agent: input.agentName,
+    content: input.content,
+    store: input.store,
+    policy: input.safetyPolicy,
+    approvalGate: input.approvalGate,
+  });
+
+  if (review.approval !== null && !review.approval.approved) {
+    throw new ChatModeError(`agent "${input.agentName}" の出力は承認されませんでした。`);
+  }
 };

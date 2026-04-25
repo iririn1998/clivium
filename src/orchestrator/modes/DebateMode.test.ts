@@ -9,6 +9,7 @@ import type {
 } from "../../agents/AgentAdapter.js";
 import type { AgentConfig, AgentName } from "../../config/agents.js";
 import { getDefaultCliviumConfig } from "../../config/defaults.js";
+import type { ApprovalGate } from "../../safety/ApprovalGate.js";
 import {
   DebateMode,
   DebateModeError,
@@ -76,6 +77,7 @@ class FakeStore implements DebateModeStore {
   sessions: { id: string; mode: string; workspacePath: string }[] = [];
   messages: { sessionId: string; sender: string; recipient?: string | null; content: string }[] =
     [];
+  events: { sessionId: string; agent: string; eventType: string; payload?: string | null }[] = [];
   closed = false;
 
   createSession(input: Parameters<DebateModeStore["createSession"]>[0]): { id: string } {
@@ -88,10 +90,24 @@ class FakeStore implements DebateModeStore {
     this.messages.push(input);
   }
 
+  addAgentEvent(input: Parameters<NonNullable<DebateModeStore["addAgentEvent"]>>[0]): void {
+    this.events.push(input);
+  }
+
   close(): void {
     this.closed = true;
   }
 }
+
+const denyingGate: ApprovalGate = {
+  async requestApproval() {
+    return {
+      approved: false,
+      response: "no",
+      decidedAt: "2026-04-25T00:00:00.000Z",
+    };
+  },
+};
 
 describe("DebateMode", () => {
   it("agent一覧は異なる2件だけ受け付ける", () => {
@@ -216,6 +232,40 @@ describe("DebateMode", () => {
       recipient: "codex",
     });
     expect(adapter.stopped).toBe(true);
+  });
+
+  it("危険操作が承認されなければ次agentへ渡す前に停止する", async () => {
+    const created: FakeAdapter[] = [];
+    const store = new FakeStore();
+
+    await expect(
+      new DebateMode().execute({
+        agents: "codex,gemini",
+        rounds: 1,
+        theme: "theme",
+        config: getDefaultCliviumConfig(),
+        store,
+        approvalGate: denyingGate,
+        stdout: {
+          write: () => {},
+        },
+        createAdapter: (name) => {
+          const adapter = new FakeAdapter(name, () => "git reset --hard");
+          created.push(adapter);
+          return adapter;
+        },
+      }),
+    ).rejects.toThrow(/承認されません/);
+
+    expect(created.map((adapter) => adapter.name)).toEqual(["codex"]);
+    expect(store.events.map((event) => event.eventType)).toEqual([
+      "safety.detected",
+      "safety.denied",
+    ]);
+    expect(store.messages.at(-1)).toMatchObject({
+      sender: "system",
+      recipient: "codex",
+    });
   });
 
   it("切り詰め後の文字数は指定値を超えない", () => {
