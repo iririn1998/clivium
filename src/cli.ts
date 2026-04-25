@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { Command, CommanderError, type OptionValues } from "commander";
 import { printBanner } from "./banner.js";
 import { CliviumConfigError, loadCliviumConfig } from "./config/load.js";
+import { ChatMode, ChatModeError } from "./orchestrator/modes/ChatMode.js";
 import { RunMode, RunModeError } from "./orchestrator/modes/RunMode.js";
 import { SessionsMode, SessionsModeError } from "./orchestrator/modes/SessionsMode.js";
 
@@ -39,6 +40,10 @@ type GlobalOpts = OptionValues & {
 
 type RunCommandOpts = GlobalOpts & {
   agent?: string;
+};
+
+type ChatCommandOpts = GlobalOpts & {
+  agents?: string;
 };
 
 /**
@@ -196,8 +201,20 @@ const buildProgram = (): Command => {
   program
     .command("chat [prompt...]")
     .description("同じ入力を複数エージェントに渡し、回答を並べる")
-    .action(() => {
-      notImplemented("chat");
+    .option("--agents <names>", "起動するagent名のカンマ区切り（例: codex,gemini）")
+    .action(async (prompt: string[], opts: ChatCommandOpts) => {
+      try {
+        await new ChatMode().execute({
+          agents: opts.agents,
+          prompt: prompt.join(" "),
+        });
+      } catch (e) {
+        if (e instanceof ChatModeError) {
+          console.error(`エラー: ${e.message}`);
+          process.exit(1);
+        }
+        throw e;
+      }
     });
 
   program

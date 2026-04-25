@@ -101,7 +101,7 @@ describe("clivium（振る舞い）", () => {
       throw new Error(`exit:${String(code)}`);
     });
 
-    await expect(runCli(["node", "/fake", "chat"])).rejects.toThrow("exit:1");
+    await expect(runCli(["node", "/fake", "debate"])).rejects.toThrow("exit:1");
     expect(errLines.join("\n")).toMatch(/未実装/);
   });
 
@@ -165,7 +165,7 @@ describe("clivium（振る舞い）", () => {
       throw new Error(`exit:${String(code)}`);
     });
 
-    await expect(runCli(["node", "/fake", "--cwd", join(d, "sub"), "chat"])).rejects.toThrow(
+    await expect(runCli(["node", "/fake", "--cwd", join(d, "sub"), "debate"])).rejects.toThrow(
       "exit:1",
     );
     expect(errLines.join("\n")).toMatch(/未実装/);
@@ -237,6 +237,73 @@ describe("clivium（振る舞い）", () => {
     await runCli(["node", "/fake", "--no-banner", "-c", path, "run", "--agent", "codex", "hello"]);
 
     expect(outChunks.join("")).toMatch(/reply:hello/);
+  });
+
+  it("chat で複数 agent の応答をagent名付きで表示し、保存できる", async () => {
+    const d = trackTemp(mkdtempSync(join(tmpdir(), "clivium-chat-")));
+    const path = join(d, "chat.json");
+    const dbPath = join(d, "sessions.sqlite");
+    process.env.CLIVIUM_DB_PATH = dbPath;
+    const agentScript = (prefix: string) => `
+      process.stdin.setEncoding("utf8");
+      process.stdin.on("data", (chunk) => {
+        process.stdout.write("${prefix}:" + chunk.trim());
+        process.exit(0);
+      });
+    `;
+    writeFileSync(
+      path,
+      JSON.stringify({
+        agents: {
+          codex: {
+            command: process.execPath,
+            args: ["-e", agentScript("codex")],
+            timeoutMs: 2000,
+          },
+          gemini: {
+            command: process.execPath,
+            args: ["-e", agentScript("gemini")],
+            timeoutMs: 2000,
+          },
+        },
+      }),
+      "utf-8",
+    );
+    const outChunks: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((c) => {
+      outChunks.push(String(c));
+      return true;
+    });
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await runCli([
+      "node",
+      "/fake",
+      "--no-banner",
+      "-c",
+      path,
+      "chat",
+      "--agents",
+      "codex,gemini",
+      "hello",
+    ]);
+
+    const text = outChunks.join("");
+    expect(text).toMatch(/\[codex\]\nhello\ncodex:hello/);
+    expect(text).toMatch(/\[gemini\]\nhello\ngemini:hello/);
+
+    const store = new SessionStore({ path: dbPath });
+    const session = store.getSession(store.listSessions()[0]!.id);
+    store.close();
+    expect(session).toMatchObject({
+      mode: "chat",
+      messages: [
+        { sender: "user", recipient: "codex", content: "hello" },
+        { sender: "codex", content: "hello\ncodex:hello" },
+        { sender: "user", recipient: "gemini", content: "hello" },
+        { sender: "gemini", content: "hello\ngemini:hello" },
+      ],
+    });
   });
 
   it("sessions で保存済みセッションの一覧を表示できる", async () => {
