@@ -10,6 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command, CommanderError, type OptionValues } from "commander";
 import { printBanner } from "./banner.js";
+import { isAgentName, type AgentName } from "./config/agents.js";
 import { CliviumConfigError, loadCliviumConfig } from "./config/load.js";
 import { ChatMode, ChatModeError } from "./orchestrator/modes/ChatMode.js";
 import { DebateMode, DebateModeError } from "./orchestrator/modes/DebateMode.js";
@@ -54,13 +55,26 @@ type DebateCommandOpts = GlobalOpts & {
   timeoutMs?: string;
 };
 
-const startTui = async (): Promise<void> => {
+type TuiCommandOpts = GlobalOpts & {
+  agent?: string;
+};
+
+const startTui = async (agent: string | undefined): Promise<void> => {
+  const targetAgent = resolveTuiAgent(agent);
   const [{ render }, { createElement }, { App }] = await Promise.all([
     import("ink"),
     import("react"),
     import("./tui/App.js"),
   ]);
-  render(createElement(App));
+  render(createElement(App, { targetAgent }));
+};
+
+const resolveTuiAgent = (agent: string | undefined): AgentName => {
+  const name = agent?.trim() || "gemini";
+  if (!isAgentName(name) || (name !== "codex" && name !== "gemini")) {
+    throw new Error(`agent "${name}" は TUI ではまだ利用できません。対応: codex, gemini`);
+  }
+  return name;
 };
 
 /**
@@ -258,8 +272,14 @@ const buildProgram = (): Command => {
   program
     .command("tui")
     .description("ログ、入力欄、agent状態を同時に確認できる最小TUIを起動する")
-    .action(async () => {
-      await startTui();
+    .option("-a, --agent <name>", "会話するagent名（codex / gemini）", "gemini")
+    .action(async (opts: TuiCommandOpts) => {
+      try {
+        await startTui(opts.agent);
+      } catch (e) {
+        console.error(`エラー: ${e instanceof Error ? e.message : String(e)}`);
+        process.exit(1);
+      }
     });
 
   program
