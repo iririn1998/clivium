@@ -3,27 +3,21 @@
  */
 import { describe, expect, it } from "vitest";
 import type { AgentConfig } from "../config/agents.js";
-import { GeminiAdapter } from "./GeminiAdapter.js";
+import { buildGeminiPromptArgs, GeminiAdapter, normalizeGeminiOutput } from "./GeminiAdapter.js";
 import type { PtyAgentProcessOptions, PtyReadOptions, PtyReadResult } from "./PtyAgentProcess.js";
 
 const config: AgentConfig = {
   command: "gemini-bin",
-  args: ["run"],
+  args: ["--skip-trust"],
   cwd: null,
   color: "#F59E0B",
   timeoutMs: 4567,
 };
 
 class FakeProcess {
-  eventCount = 3;
-  sent: string[] = [];
   readOptions: PtyReadOptions | undefined;
 
   async start(): Promise<void> {}
-
-  async send(input: string): Promise<void> {
-    this.sent.push(input);
-  }
 
   async read(options?: PtyReadOptions): Promise<PtyReadResult> {
     this.readOptions = options;
@@ -47,7 +41,7 @@ class FakeProcess {
 }
 
 describe("GeminiAdapter（振る舞い）", () => {
-  it("Gemini の名前と設定で起動し、同じ send/read 契約で応答を返す", async () => {
+  it("Gemini の名前と設定で起動し、prompt 引数で応答を返す", async () => {
     const fake = new FakeProcess();
     let spawnOptions: PtyAgentProcessOptions | undefined;
     const adapter = new GeminiAdapter(config, {
@@ -58,26 +52,53 @@ describe("GeminiAdapter（振る舞い）", () => {
     });
 
     await adapter.start();
-    await adapter.send("hello\n");
+    await adapter.send("hello");
     const result = await adapter.read({ idleMs: 20 });
 
     expect(spawnOptions).toMatchObject({
       agent: "gemini",
       command: "gemini-bin",
-      args: ["run"],
+      args: ["--skip-trust", "--output-format", "json", "-p", "hello"],
       cwd: null,
       timeoutMs: 4567,
     });
-    expect(fake.sent).toEqual(["hello\n"]);
     expect(fake.readOptions).toMatchObject({
       timeoutMs: 4567,
       idleMs: 20,
-      fromEventIndex: 3,
+      fromEventIndex: 0,
+      waitForExit: true,
     });
     expect(result.message).toMatchObject({
       role: "agent",
       agent: "gemini",
       content: "gemini answer",
     });
+  });
+
+  it("設定済みの prompt flag は重複させない", () => {
+    expect(buildGeminiPromptArgs(["--skip-trust", "--prompt"], "hello")).toEqual([
+      "--skip-trust",
+      "--output-format",
+      "json",
+      "--prompt",
+      "hello",
+    ]);
+  });
+
+  it("設定済みの output format は重複させない", () => {
+    expect(buildGeminiPromptArgs(["--output-format", "text"], "hello")).toEqual([
+      "--output-format",
+      "text",
+      "-p",
+      "hello",
+    ]);
+  });
+
+  it("JSON 出力では response だけを本文として扱う", () => {
+    expect(
+      normalizeGeminiOutput(
+        '[ERROR] [IDEClient] Failed to connect to IDE companion extension.\n{"response":"gemini answer","stats":{}}',
+      ),
+    ).toBe("gemini answer");
   });
 });

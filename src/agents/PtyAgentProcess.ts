@@ -33,6 +33,7 @@ export type PtyReadOptions = {
   idleMs?: number;
   fromEventIndex?: number;
   killOnTimeout?: boolean;
+  waitForExit?: boolean;
 };
 
 export type PtyReadResult = {
@@ -189,6 +190,7 @@ export class PtyAgentProcess {
     const fromEventIndex = options.fromEventIndex ?? 0;
     const timeoutMs = options.timeoutMs ?? this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const idleMs = options.idleMs ?? DEFAULT_IDLE_MS;
+    const waitForExit = options.waitForExit ?? false;
 
     if (this.exitInfo !== null) {
       return this.resultFrom(fromEventIndex, false);
@@ -232,10 +234,13 @@ export class PtyAgentProcess {
           void finish(false);
           return;
         }
+        if (waitForExit) {
+          return;
+        }
         scheduleIdle();
       });
 
-      if (this.eventLog.length > fromEventIndex) {
+      if (!waitForExit && this.eventLog.length > fromEventIndex) {
         scheduleIdle();
       }
     });

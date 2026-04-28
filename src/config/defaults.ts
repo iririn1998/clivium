@@ -25,7 +25,7 @@ const codexDefault = (): AgentConfig => ({
 
 const geminiDefault = (): AgentConfig => ({
   command: "npx",
-  args: ["-y", "@google/gemini-cli", "run"],
+  args: ["-y", "@google/gemini-cli"],
   cwd: null,
   color: "#F59E0B",
   timeoutMs: 600_000,

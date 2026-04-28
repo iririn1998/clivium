@@ -246,6 +246,11 @@ describe("clivium（振る舞い）", () => {
     const dbPath = join(d, "sessions.sqlite");
     process.env.CLIVIUM_DB_PATH = dbPath;
     const agentScript = (prefix: string) => `
+      const promptFlagIndex = process.argv.findIndex((arg) => arg === "-p" || arg === "--prompt");
+      if (promptFlagIndex !== -1) {
+        process.stdout.write("${prefix}:" + (process.argv[promptFlagIndex + 1] ?? ""));
+        process.exit(0);
+      }
       process.stdin.setEncoding("utf8");
       process.stdin.on("data", (chunk) => {
         process.stdout.write("${prefix}:" + chunk.trim());
@@ -263,7 +268,7 @@ describe("clivium（振る舞い）", () => {
           },
           gemini: {
             command: process.execPath,
-            args: ["-e", agentScript("gemini")],
+            args: ["-e", agentScript("gemini"), "--"],
             timeoutMs: 2000,
           },
         },
@@ -291,7 +296,7 @@ describe("clivium（振る舞い）", () => {
 
     const text = outChunks.join("");
     expect(text).toMatch(/\[codex\]\nhello\ncodex:hello/);
-    expect(text).toMatch(/\[gemini\]\nhello\ngemini:hello/);
+    expect(text).toMatch(/\[gemini\]\ngemini:hello/);
 
     const store = new SessionStore({ path: dbPath });
     const session = store.getSession(store.listSessions()[0]!.id);
@@ -302,7 +307,7 @@ describe("clivium（振る舞い）", () => {
         { sender: "user", recipient: "codex", content: "hello" },
         { sender: "codex", content: "hello\ncodex:hello" },
         { sender: "user", recipient: "gemini", content: "hello" },
-        { sender: "gemini", content: "hello\ngemini:hello" },
+        { sender: "gemini", content: "gemini:hello" },
       ],
     });
   });
@@ -313,6 +318,11 @@ describe("clivium（振る舞い）", () => {
     const dbPath = join(d, "sessions.sqlite");
     process.env.CLIVIUM_DB_PATH = dbPath;
     const agentScript = (prefix: string) => `
+      const promptFlagIndex = process.argv.findIndex((arg) => arg === "-p" || arg === "--prompt");
+      if (promptFlagIndex !== -1) {
+        process.stdout.write("${prefix}:" + (process.argv[promptFlagIndex + 1] ?? ""));
+        process.exit(0);
+      }
       process.stdin.setEncoding("utf8");
       process.stdin.on("data", (chunk) => {
         process.stdout.write("${prefix}:" + chunk.trim());
@@ -330,7 +340,7 @@ describe("clivium（振る舞い）", () => {
           },
           gemini: {
             command: process.execPath,
-            args: ["-e", agentScript("gemini")],
+            args: ["-e", agentScript("gemini"), "--"],
             timeoutMs: 2000,
           },
         },

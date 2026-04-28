@@ -90,4 +90,26 @@ describe("PtyAgentProcess（振る舞い）", () => {
     expect(result.timedOut).toBe(true);
     expect(proc.exited).toBe(true);
   });
+
+  it("waitForExit 指定時は idle で返さず、プロセス終了まで出力を集める", async () => {
+    const proc = new PtyAgentProcess({
+      agent: "gemini",
+      command: process.execPath,
+      args: nodeArgs(`
+        process.stdout.write("one");
+        setTimeout(() => {
+          process.stdout.write("two");
+          process.exit(0);
+        }, 80);
+      `),
+      timeoutMs: 2_000,
+    });
+
+    await proc.start();
+    const result = await proc.read({ timeoutMs: 2_000, idleMs: 20, waitForExit: true });
+
+    expect(result.output).toBe("onetwo");
+    expect(result.completed).toBe(true);
+    expect(result.timedOut).toBe(false);
+  });
 });
