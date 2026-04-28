@@ -272,7 +272,7 @@ const buildProgram = (): Command => {
   program
     .command("tui")
     .description("ログ、入力欄、agent状態を同時に確認できる最小TUIを起動する")
-    .option("-a, --agent <name>", "会話するagent名（codex / gemini）", "gemini")
+    .option("-a, --agent <name>", "最初に会話するagent名（codex / gemini）", "gemini")
     .action(async (opts: TuiCommandOpts) => {
       try {
         await startTui(opts.agent);

@@ -7,7 +7,7 @@ import { useMemo, useState } from "react";
 import { Box, useApp, useInput } from "ink";
 import type { AgentConfig, AgentName } from "../config/agents.js";
 import { getDefaultCliviumConfig, type CliviumConfig } from "../config/defaults.js";
-import type { AgentAdapter } from "../agents/AgentAdapter.js";
+import type { AgentAdapter, AgentReadResult } from "../agents/AgentAdapter.js";
 import { CodexAdapter } from "../agents/CodexAdapter.js";
 import { GeminiAdapter } from "../agents/GeminiAdapter.js";
 import { InputBox } from "./InputBox.js";
@@ -24,6 +24,7 @@ export type AppProps = {
   agentStates?: TuiAgentState[];
   maxMessages?: number;
   targetAgent?: AgentName;
+  handoffAgent?: AgentName | null;
   config?: CliviumConfig;
   createAdapter?: TuiAdapterFactory;
 };
@@ -35,6 +36,7 @@ export const App = ({
   agentStates,
   maxMessages = DEFAULT_VISIBLE_MESSAGES,
   targetAgent = "gemini",
+  handoffAgent = "codex",
   config,
   createAdapter = defaultCreateAdapter,
 }: AppProps): React.JSX.Element => {
@@ -47,31 +49,34 @@ export const App = ({
     () => agentStates ?? defaultAgentStates(resolvedConfig),
   );
   const [busy, setBusy] = useState(false);
+  const agentSequence = resolveTuiAgentSequence(targetAgent, handoffAgent);
 
   const submit = (content: string): void => {
     const userMessage = createTuiMessage("user", content);
     setMessages((current) => [...current, userMessage]);
     setInput("");
     setBusy(true);
-    setAgentStatus(setAgents, targetAgent, "running");
-    void sendToAgent({
-      agentName: targetAgent,
-      prompt: content,
-      config: resolvedConfig.agents[targetAgent],
+    void sendThroughAgents({
+      agentNames: agentSequence,
+      initialPrompt: content,
+      config: resolvedConfig,
       createAdapter,
+      onAgentStart: (agentName) => {
+        setAgentStatus(setAgents, agentName, "running");
+      },
       onMessage: (message) => {
         setMessages((current) => [...current, createTuiMessage(message.sender, message.content)]);
       },
-      onError: (message) => {
+      onAgentError: (agentName, message) => {
         setError(message);
         setMessages((current) => [...current, createTuiMessage("system", message)]);
-        setAgentStatus(setAgents, targetAgent, "error", message);
+        setAgentStatus(setAgents, agentName, "error", message);
+      },
+      onAgentSuccess: (agentName) => {
+        setAgentStatus(setAgents, agentName, "idle");
       },
       onComplete: () => {
         setBusy(false);
-      },
-      onSuccess: () => {
-        setAgentStatus(setAgents, targetAgent, "idle");
       },
     });
   };
@@ -121,32 +126,70 @@ type SendToAgentInput = {
   prompt: string;
   config: AgentConfig;
   createAdapter: TuiAdapterFactory;
+};
+
+type SendThroughAgentsInput = {
+  agentNames: AgentName[];
+  initialPrompt: string;
+  config: CliviumConfig;
+  createAdapter: TuiAdapterFactory;
+  onAgentStart(agentName: AgentName): void;
   onMessage(message: { sender: AgentName; content: string }): void;
-  onError(message: string): void;
-  onSuccess(): void;
+  onAgentError(agentName: AgentName, message: string): void;
+  onAgentSuccess(agentName: AgentName): void;
   onComplete(): void;
 };
 
-const sendToAgent = async (input: SendToAgentInput): Promise<void> => {
+export const resolveTuiAgentSequence = (
+  targetAgent: AgentName,
+  handoffAgent: AgentName | null,
+): AgentName[] => {
+  if (handoffAgent === null || handoffAgent === targetAgent) {
+    return [targetAgent];
+  }
+  return [targetAgent, handoffAgent];
+};
+
+export const sendThroughAgents = async (input: SendThroughAgentsInput): Promise<void> => {
+  let nextPrompt = input.initialPrompt;
+  let currentAgent: AgentName | null = null;
+
+  try {
+    for (const agentName of input.agentNames) {
+      currentAgent = agentName;
+      input.onAgentStart(agentName);
+      const result = await sendToAgent({
+        agentName,
+        prompt: nextPrompt,
+        config: input.config.agents[agentName],
+        createAdapter: input.createAdapter,
+      });
+      input.onMessage({ sender: agentName, content: result.message.content });
+      if (!result.completed) {
+        throw new Error(`agent "${agentName}" の応答がタイムアウトしました。`);
+      }
+      input.onAgentSuccess(agentName);
+      nextPrompt = result.message.content;
+    }
+  } catch (e) {
+    input.onAgentError(
+      currentAgent ?? input.agentNames[0] ?? "codex",
+      e instanceof Error ? e.message : String(e),
+    );
+  } finally {
+    input.onComplete();
+  }
+};
+
+const sendToAgent = async (input: SendToAgentInput): Promise<AgentReadResult> => {
   let adapter: AgentAdapter | null = null;
   try {
     adapter = input.createAdapter(input.agentName, input.config);
     await adapter.start();
     await adapter.send(input.prompt);
-    const result = await adapter.read();
-    input.onMessage({ sender: input.agentName, content: result.message.content });
-    if (!result.completed) {
-      throw new Error(`agent "${input.agentName}" の応答がタイムアウトしました。`);
-    }
-    input.onSuccess();
-  } catch (e) {
-    input.onError(e instanceof Error ? e.message : String(e));
+    return await adapter.read();
   } finally {
-    try {
-      await adapter?.stop();
-    } finally {
-      input.onComplete();
-    }
+    await adapter?.stop();
   }
 };
 
