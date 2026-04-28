@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentConfig } from "../config/agents.js";
 import type { AgentOutputEvent } from "../types/AgentMessage.js";
 import { createAgentOutputChunkEvent } from "../types/AgentMessage.js";
-import { CodexAdapter } from "./CodexAdapter.js";
+import { buildCodexPromptArgs, CodexAdapter, normalizeCodexOutput } from "./CodexAdapter.js";
 import type { PtyAgentProcessOptions, PtyReadOptions, PtyReadResult } from "./PtyAgentProcess.js";
 
 const config: AgentConfig = {
@@ -17,15 +17,14 @@ const config: AgentConfig = {
 };
 
 class FakeProcess {
-  eventCount = 0;
   started = false;
-  sent: string[] = [];
   interrupted = false;
   stopped = false;
   readOptions: PtyReadOptions | undefined;
   listeners: ((event: AgentOutputEvent) => void)[] = [];
   readResult: PtyReadResult = {
-    output: " answer\r\n",
+    output:
+      '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"codex answer"}}\n',
     events: [],
     exitCode: 0,
     signal: null,
@@ -35,10 +34,6 @@ class FakeProcess {
 
   async start(): Promise<void> {
     this.started = true;
-  }
-
-  async send(input: string): Promise<void> {
-    this.sent.push(input);
   }
 
   async read(options?: PtyReadOptions): Promise<PtyReadResult> {
@@ -70,7 +65,7 @@ class FakeProcess {
 }
 
 describe("CodexAdapter（振る舞い）", () => {
-  it("config のコマンド・引数・cwd・timeout を使って起動する", async () => {
+  it("Codex の名前と設定で起動し、prompt 引数で応答を返す", async () => {
     const fake = new FakeProcess();
     let spawnOptions: PtyAgentProcessOptions | undefined;
     const adapter = new CodexAdapter(config, {
@@ -81,41 +76,31 @@ describe("CodexAdapter（振る舞い）", () => {
     });
 
     await adapter.start();
+    expect(spawnOptions).toBeUndefined();
+    await adapter.send("hello");
+    const result = await adapter.read({ idleMs: 10 });
 
     expect(fake.started).toBe(true);
     expect(spawnOptions).toMatchObject({
       agent: "codex",
       command: "codex-bin",
-      args: ["exec"],
+      args: ["exec", "--json", "--", "hello"],
       cwd: "/workspace",
       timeoutMs: 1234,
     });
-  });
-
-  it("send は一回質問として改行付きで CLI へ渡し、read は応答メッセージに変換する", async () => {
-    const fake = new FakeProcess();
-    fake.eventCount = 7;
-    const adapter = new CodexAdapter(config, {
-      createProcess: () => fake,
-    });
-
-    await adapter.start();
-    await adapter.send("hello");
-    const result = await adapter.read({ idleMs: 10 });
-
-    expect(fake.sent).toEqual(["hello\n"]);
     expect(fake.readOptions).toMatchObject({
       timeoutMs: 1234,
       idleMs: 10,
-      fromEventIndex: 7,
+      fromEventIndex: 0,
       killOnTimeout: true,
+      waitForExit: true,
     });
     expect(result.completed).toBe(true);
-    expect(result.output).toBe("answer");
+    expect(result.output).toBe("codex answer");
     expect(result.message).toMatchObject({
       role: "agent",
       agent: "codex",
-      content: "answer",
+      content: "codex answer",
     });
   });
 
@@ -134,6 +119,7 @@ describe("CodexAdapter（振る舞い）", () => {
     });
 
     await adapter.start();
+    await adapter.send("hello");
     const result = await adapter.read();
 
     expect(result.completed).toBe(false);
@@ -151,6 +137,7 @@ describe("CodexAdapter（振る舞い）", () => {
     });
 
     await adapter.start();
+    await adapter.send("hello");
     fake.emit(createAgentOutputChunkEvent("codex", "stdout", "hello"));
     await adapter.interrupt();
     await adapter.stop();
@@ -161,5 +148,28 @@ describe("CodexAdapter（振る舞い）", () => {
     ]);
     expect(fake.interrupted).toBe(true);
     expect(fake.stopped).toBe(true);
+  });
+
+  it("JSON flag と prompt 区切りは重複させない", () => {
+    expect(buildCodexPromptArgs(["exec", "--json", "--"], "-hello")).toEqual([
+      "exec",
+      "--json",
+      "--",
+      "-hello",
+    ]);
+  });
+
+  it("JSONL 出力では最後の agent_message だけを本文として扱う", () => {
+    expect(
+      normalizeCodexOutput(
+        [
+          "Reading additional input from stdin...",
+          '{"type":"thread.started","thread_id":"t"}',
+          '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"first"}}',
+          '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"final answer"}}',
+          "2026-04-28T14:52:49Z ERROR codex_core::session: ignored",
+        ].join("\n"),
+      ),
+    ).toBe("final answer");
   });
 });

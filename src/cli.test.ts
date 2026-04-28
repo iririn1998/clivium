@@ -17,6 +17,28 @@ const trackTemp = (d: string) => {
   return d;
 };
 
+const agentScript = (prefix: string) => `
+  const prefix = ${JSON.stringify(prefix)};
+  const promptFlagIndex = process.argv.findIndex((arg) => arg === "-p" || arg === "--prompt");
+  const separatorIndex = process.argv.lastIndexOf("--");
+  const prompt =
+    promptFlagIndex !== -1
+      ? (process.argv[promptFlagIndex + 1] ?? "")
+      : separatorIndex !== -1 && separatorIndex < process.argv.length - 1
+        ? (process.argv[separatorIndex + 1] ?? "")
+        : (process.argv[process.argv.length - 1] ?? "");
+  const answer = prefix + ":" + prompt;
+  if (process.argv.includes("--json")) {
+    process.stdout.write(JSON.stringify({
+      type: "item.completed",
+      item: { id: "item_0", type: "agent_message", text: answer },
+    }));
+    process.exit(0);
+  }
+  process.stdout.write(answer);
+  process.exit(0);
+`;
+
 beforeEach(() => {
   cwdBefore = process.cwd();
   tempDirs = [];
@@ -212,16 +234,7 @@ describe("clivium（振る舞い）", () => {
         agents: {
           codex: {
             command: process.execPath,
-            args: [
-              "-e",
-              `
-              process.stdin.setEncoding("utf8");
-              process.stdin.on("data", (chunk) => {
-                process.stdout.write("reply:" + chunk.trim());
-                process.exit(0);
-              });
-              `,
-            ],
+            args: ["-e", agentScript("reply"), "--", "--json"],
             timeoutMs: 2000,
           },
         },
@@ -245,25 +258,13 @@ describe("clivium（振る舞い）", () => {
     const path = join(d, "chat.json");
     const dbPath = join(d, "sessions.sqlite");
     process.env.CLIVIUM_DB_PATH = dbPath;
-    const agentScript = (prefix: string) => `
-      const promptFlagIndex = process.argv.findIndex((arg) => arg === "-p" || arg === "--prompt");
-      if (promptFlagIndex !== -1) {
-        process.stdout.write("${prefix}:" + (process.argv[promptFlagIndex + 1] ?? ""));
-        process.exit(0);
-      }
-      process.stdin.setEncoding("utf8");
-      process.stdin.on("data", (chunk) => {
-        process.stdout.write("${prefix}:" + chunk.trim());
-        process.exit(0);
-      });
-    `;
     writeFileSync(
       path,
       JSON.stringify({
         agents: {
           codex: {
             command: process.execPath,
-            args: ["-e", agentScript("codex")],
+            args: ["-e", agentScript("codex"), "--", "--json"],
             timeoutMs: 2000,
           },
           gemini: {
@@ -295,7 +296,7 @@ describe("clivium（振る舞い）", () => {
     ]);
 
     const text = outChunks.join("");
-    expect(text).toMatch(/\[codex\]\nhello\ncodex:hello/);
+    expect(text).toMatch(/\[codex\]\ncodex:hello/);
     expect(text).toMatch(/\[gemini\]\ngemini:hello/);
 
     const store = new SessionStore({ path: dbPath });
@@ -305,7 +306,7 @@ describe("clivium（振る舞い）", () => {
       mode: "chat",
       messages: [
         { sender: "user", recipient: "codex", content: "hello" },
-        { sender: "codex", content: "hello\ncodex:hello" },
+        { sender: "codex", content: "codex:hello" },
         { sender: "user", recipient: "gemini", content: "hello" },
         { sender: "gemini", content: "gemini:hello" },
       ],
@@ -317,25 +318,13 @@ describe("clivium（振る舞い）", () => {
     const path = join(d, "debate.json");
     const dbPath = join(d, "sessions.sqlite");
     process.env.CLIVIUM_DB_PATH = dbPath;
-    const agentScript = (prefix: string) => `
-      const promptFlagIndex = process.argv.findIndex((arg) => arg === "-p" || arg === "--prompt");
-      if (promptFlagIndex !== -1) {
-        process.stdout.write("${prefix}:" + (process.argv[promptFlagIndex + 1] ?? ""));
-        process.exit(0);
-      }
-      process.stdin.setEncoding("utf8");
-      process.stdin.on("data", (chunk) => {
-        process.stdout.write("${prefix}:" + chunk.trim());
-        process.exit(0);
-      });
-    `;
     writeFileSync(
       path,
       JSON.stringify({
         agents: {
           codex: {
             command: process.execPath,
-            args: ["-e", agentScript("codex")],
+            args: ["-e", agentScript("codex"), "--", "--json"],
             timeoutMs: 2000,
           },
           gemini: {
